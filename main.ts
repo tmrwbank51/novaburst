@@ -2,72 +2,66 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 
-const W = 1024, H = 1024;
-const pixels = Buffer.alloc(W * H * 4);
-let seed = 0x4e4f5641;
-function rand() { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }
-const clamp=(v:number)=>Math.max(0,Math.min(255,Math.round(v)));
-function blend(x:number,y:number,c:number[],a=1) { x=Math.floor(x); y=Math.floor(y); if(x<0||y<0||x>=W||y>=H)return; const i=(y*W+x)*4, q=1-a; pixels[i]=clamp(c[0]*a+pixels[i]*q);pixels[i+1]=clamp(c[1]*a+pixels[i+1]*q);pixels[i+2]=clamp(c[2]*a+pixels[i+2]*q);pixels[i+3]=255; }
-function ellipse(cx:number,cy:number,rx:number,ry:number,c:number[],alpha=1,rot=0) { const co=Math.cos(rot),si=Math.sin(rot),r=Math.ceil(Math.max(rx,ry)); for(let y=Math.floor(cy-r);y<=cy+r;y++)for(let x=Math.floor(cx-r);x<=cx+r;x++){const dx=x-cx,dy=y-cy,u=dx*co+dy*si,v=-dx*si+dy*co;if(u*u/(rx*rx)+v*v/(ry*ry)<=1)blend(x,y,c,alpha);} }
-function poly(points:number[][],c:number[],alpha=1) { let minY=H,maxY=0;for(const p of points){minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);} for(let y=Math.max(0,Math.floor(minY));y<=Math.min(H-1,Math.ceil(maxY));y++){const xs:number[]=[];for(let i=0,j=points.length-1;i<points.length;j=i++){const [xi,yi]=points[i],[xj,yj]=points[j];if((yi<=y&&yj>y)||(yj<=y&&yi>y))xs.push(xi+(y-yi)*(xj-xi)/(yj-yi));}xs.sort((a,b)=>a-b);for(let k=0;k+1<xs.length;k+=2)for(let x=Math.ceil(xs[k]);x<=xs[k+1];x++)blend(x,y,c,alpha);} }
-function line(x1:number,y1:number,x2:number,y2:number,width:number,c:number[],alpha=1){const n=Math.ceil(Math.hypot(x2-x1,y2-y1));for(let i=0;i<=n;i++){const t=n?i/n:0;ellipse(x1+(x2-x1)*t,y1+(y2-y1)*t,width/2,width/2,c,alpha);}}
-function gradient(){for(let y=0;y<H;y++){const t=y/H;const top=[13,20,57],mid=[76,42,79],low=[255,139,54];const a=t<.65?t/.65:(t-.65)/.35, c=t<.65?top:mid,d=t<.65?mid:low;for(let x=0;x<W;x++)blend(x,y,[c[0]*(1-a)+d[0]*a,c[1]*(1-a)+d[1]*a,c[2]*(1-a)+d[2]*a]);}}
-function chunk(type:string,data:Buffer){const name=Buffer.from(type),len=Buffer.alloc(4);len.writeUInt32BE(data.length);const crcInput=Buffer.concat([name,data]);let crc=0xffffffff;for(const b of crcInput){crc^=b;for(let k=0;k<8;k++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,name,data,tail]);}
-gradient();
-// Radiant sun and broad rays establish a single glowing focal zone.
-ellipse(560,420,172,172,[255,184,84],.22);ellipse(560,420,104,104,[255,204,112],.48);ellipse(560,420,57,57,[255,232,171],.9);
-for(let i=0;i<22;i++){const a=i*Math.PI/11+.04, r1=120,r2=470, w=10+(i%3)*8;poly([[560+Math.cos(a)*r1-Math.sin(a)*w,420+Math.sin(a)*r1+Math.cos(a)*w],[560+Math.cos(a)*r2-Math.sin(a)*w*.22,420+Math.sin(a)*r2+Math.cos(a)*w*.22],[560+Math.cos(a)*r2+Math.sin(a)*w*.22,420+Math.sin(a)*r2-Math.cos(a)*w*.22],[560+Math.cos(a)*r1+Math.sin(a)*w,420+Math.sin(a)*r1-Math.cos(a)*w]],[255,190,105],.065);}
-// distant cloud banks and a few luminous atmospheric strokes
-for(let i=0;i<42;i++){const x=rand()*1200-80,y=585+rand()*290,rx=24+rand()*105,ry=5+rand()*20;ellipse(x,y,rx,ry,[255,199+rand()*35,139],.10+rand()*.16);}
-for(let i=0;i<18;i++){const x=rand()*1200-70,y=720+rand()*210;line(x,y,x+55+rand()*120,y+rand()*4,2+rand()*5,[255,224,163],.18);}
-// gigantic swept wings: membrane silhouette, luminous edge and fan ribs
-poly([[392,499],[265,375],[114,190],[47,92],[76,66],[113,111],[217,175],[327,250],[418,338],[508,438]], [21,54,82]);
-poly([[559,481],[671,365],[837,287],[985,252],[1007,278],[958,329],[900,365],[835,417],[753,471],[653,520]], [20,58,83]);
-poly([[392,480],[262,360],[112,178],[62,98],[79,77],[116,121],[223,185],[330,260],[425,358],[503,448]], [39,133,159],.88);
-poly([[566,470],[677,369],[839,300],[984,269],[989,282],[947,327],[888,363],[823,411],[745,458],[656,499]], [39,139,162],.86);
-for(let i=0;i<8;i++){const t=i/7;line(406,478,78+t*352,87+t*311,4,[163,226,218],.52);line(577,475,985-t*338,274+t*200,4,[161,227,215],.5);}
-// shell: broad gold edged oval with segmented, city-bearing carapace
-ellipse(514,502,236,116,[-6,15,33],1,-.07);ellipse(514,491,229,108,[255,186,76],1,-.07);ellipse(514,487,216,96,[31,64,82],1,-.07);
-poly([[311,456],[368,403],[447,387],[488,431],[470,489],[398,511],[336,490]], [60,104,111]);
-poly([[492,430],[552,395],[627,412],[671,460],[622,490],[535,477]], [56,99,107]);
-poly([[353,501],[421,516],[470,490],[528,488],[563,532],[511,572],[430,573],[372,546]], [61,104,108]);
-poly([[562,491],[628,480],[678,458],[715,494],[684,537],[621,550],[570,531]], [58,98,106]);
-for(const p of [[[311,456],[368,403],[447,387],[488,431],[470,489],[398,511],[336,490]],[[492,430],[552,395],[627,412],[671,460],[622,490],[535,477]],[[353,501],[421,516],[470,490],[528,488],[563,532],[511,572],[430,573],[372,546]],[[562,491],[628,480],[678,458],[715,494],[684,537],[621,550],[570,531]]]){for(let i=0;i<p.length;i++)line(p[i][0],p[i][1],p[(i+1)%p.length][0],p[(i+1)%p.length][1],3,[232,178,94],.75);}
-// city terraces and winding street of light, placed on the shell's crown
-poly([[350,455],[411,424],[618,419],[685,462],[632,482],[407,483]], [16,34,54]);
-line(367,456,624,453,8,[255,164,63],.85);line(395,469,655,463,5,[255,211,105],.8);
-// fast diagonal wake-lines and stepped neighborhoods make the shell-city read as a vast place
-for(let i=0;i<8;i++){line(116+i*17,399-i*8,275+i*12,456-i*4,3,[255,177,94],.16);line(740+i*13,458-i*5,917+i*10,383-i*8,3,[255,183,96],.15);}
-for(const [x,y,w,h] of [[360,432,14,31],[379,426,13,43],[445,424,13,30],[478,424,12,32],[544,429,12,35],[585,431,13,32],[619,438,12,26],[651,447,13,20]]){
-  poly([[x-w/2,y],[x,y-6],[x+w/2,y-3],[x+w/2,y+h],[x-w/2,y+h+4]],[27,72,89]);
-  line(x,y-3,x,y+h,1.5,[255,191,96],.55);
-  for(let wy=y+7;wy<y+h;wy+=8)for(let wx=x-w/2+3;wx<x+w/2;wx+=5)if(rand()>.35)ellipse(wx,wy,1.1,1.6,[255,218,134],.9);
-}
-// two luminous avenues converge toward the skyline's central spire
-line(382,472,494,449,4,[255,207,116],.82);line(644,469,532,449,4,[255,207,116],.82);
-const towers=[ [390,425,22,62],[420,418,27,88],[458,412,24,72],[492,403,32,105],[532,414,26,78],[567,410,22,69],[601,421,26,56],[632,435,20,45] ];
-for(let n=0;n<towers.length;n++){const [x,y,w,h]=towers[n];poly([[x-w/2,y],[x+w/2,y-7],[x+w/2,y+h],[x-w/2,y+h+7]],[24,58,76]);poly([[x-w/2,y],[x,y-11],[x+w/2,y-7],[x,y+2]],[85,137,150]);line(x,y-8,x,y+h,2,[255,188,85],.38);for(let wy=y+10;wy<y+h-3;wy+=10)for(let wx=x-w/2+5;wx<x+w/2-2;wx+=8)if(rand()>.23)ellipse(wx,wy,1.8,2.2,rand()>.35?[255,219,131]:[72,214,220],.95);if(n===3||n===5){line(x,y-10,x,y-23,2,[255,221,133]);ellipse(x,y-25,4,4,[255,68,52]);}}
-// shell underside, powerful neck and head
-poly([[333,502],[410,543],[507,562],[593,528],[650,497],[626,580],[559,633],[448,627],[360,584]], [107,68,48]);
-poly([[356,516],[432,552],[512,568],[601,530],[624,542],[579,598],[496,615],[411,590]], [208,151,83]);
-for(let i=0;i<5;i++)line(393+i*39,546+i*6,413+i*35,593-i*1,3,[98,67,53],.72);
-// neck angles forward into an expressive turtle head
-poly([[605,458],[669,419],[729,393],[787,397],[819,424],[806,458],[771,479],[716,480],[668,500]], [31,65,75]);
-poly([[619,452],[677,423],[729,402],[785,408],[806,429],[790,450],[746,466],[691,467]], [183,167,112]);
-for(let i=0;i<14;i++)ellipse(672+rand()*106,426+rand()*38,3+rand()*4,2+rand()*3,[52,89,86],.7);
-ellipse(761,419,15,13,[20,30,49]);ellipse(766,416,5,5,[255,234,186]);ellipse(768,414,2,2,[255,255,255]);ellipse(802,434,3,2,[34,38,46]);
-// four flippers trail the glide, outlined in gold and scaled boldly
-poly([[386,536],[326,593],[253,669],[184,714],[151,700],[181,658],[244,590],[305,532]], [84,58,42]);poly([[371,542],[314,593],[250,655],[187,695],[173,688],[208,646],[260,587],[318,538]], [180,126,68]);
-poly([[567,544],[600,608],[657,681],[712,720],[742,700],[718,665],[657,601],[615,531]], [84,58,42]);poly([[580,541],[614,603],[665,669],[713,704],[726,694],[694,655],[642,592],[610,533]], [177,128,69]);
-poly([[398,568],[366,634],[340,710],[300,760],[274,751],[280,715],[306,648],[339,582]], [90,61,44]);poly([[394,575],[366,640],[342,704],[307,745],[294,739],[307,699],[330,636],[350,581]], [180,126,69]);
-poly([[600,559],[633,621],[671,691],[711,741],[738,731],[730,695],[697,637],[652,565]], [90,61,44]);poly([[605,565],[638,629],[678,691],[716,725],[727,719],[710,680],[679,625],[646,565]], [180,126,69]);
-for(const [x,y] of [[184,680],[708,687],[309,724],[702,706]])for(let i=0;i<5;i++)line(x+i*5,y-i*3,x+12+i*5,y+8-i*3,2,[77,61,49],.55);
-// bright contour accents unify silhouette; birds make the scale legible
-line(285,368,112,152,5,[255,205,110],.85);line(82,92,97,91,4,[255,217,141],.9);line(695,364,850,302,4,[255,203,108],.85);line(879,298,965,279,4,[255,221,143],.85);
-for(const [x,y,s] of [[155,313,1],[865,505,.8],[263,244,.65],[819,198,.6],[123,491,.55]]){line(x-s*13,y,x,y-s*7,2,[20,24,52],.9);line(x,y-s*7,x+s*13,y,2,[20,24,52],.9);}
-// small drifting sparks around the light, deliberately sparse for PNG size
-for(let i=0;i<65;i++){const x=rand()*W,y=rand()*H;if((x-560)**2+(y-420)**2<185**2&&rand()<.7)continue;const r=1+rand()*2.2;ellipse(x,y,r,r,[255,222,157],.45);}
-const raw=Buffer.alloc((W*4+1)*H);for(let y=0;y<H;y++){const off=y*(W*4+1);raw[off]=0;pixels.copy(raw,off+1,y*W*4,(y+1)*W*4);}
-const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(W,0);ihdr.writeUInt32BE(H,4);ihdr[8]=8;ihdr[9]=6;
-const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',deflateSync(raw,{level:9})),chunk('IEND',Buffer.alloc(0))]);
-const out=process.env.MAKEFUN_OUTPUT_DIR||'/output';await mkdir(out,{recursive:true});await writeFile(join(out,'entry.png'),png);
+// NOVABURST — a small deterministic analytic ray tracer, drawn entirely from geometry.
+const OUT_W=1024, OUT_H=1024, W=384, H=384;
+type V=[number,number,number]; type C=[number,number,number];
+const v=(x:number,y:number,z:number):V=>[x,y,z], add=(a:V,b:V):V=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]], sub=(a:V,b:V):V=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], mul=(a:V,s:number):V=>[a[0]*s,a[1]*s,a[2]*s], dot=(a:V,b:V)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2], norm=(a:V):V=>{const l=Math.hypot(...a)||1;return mul(a,1/l)};
+const clamp=(x:number,a=0,b=1)=>Math.max(a,Math.min(b,x)), mix=(a:number,b:number,t:number)=>a+(b-a)*t;
+interface Obj {kind:'e'|'b'; c:V; ax:V[]; r:V; col:C; mat:'skin'|'shell'|'wing'|'city'|'cloud'|'rock'; id:number; glow?:number}
+const objs:Obj[]=[]; let seed=0x51a7c0de; function rnd(){seed|=0;seed=seed+0x6d2b79f5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return ((t^t>>>14)>>>0)/4294967296;}
+function ell(c:V,r:V,col:C,mat:Obj['mat'], ax?:V[], glow=0){objs.push({kind:'e',c,ax:ax||[v(1,0,0),v(0,1,0),v(0,0,1)],r,col,mat,id:objs.length,glow});}
+function box(c:V,r:V,col:C,glow=0){objs.push({kind:'b',c,ax:[v(1,0,0),v(0,1,0),v(0,0,1)],r,col,mat:'city',id:objs.length,glow});}
+// Far cloud banks create layered scale and a warm horizon.
+for(let i=0;i<20;i++){const x=-8+rnd()*16,z=-3-rnd()*7,y=-1.9+rnd()*.55,s=.6+rnd()*1.5;ell(v(x,y,z),v(s,.18+rnd()*.22,s*.62),[.55,.66,.78],'cloud');}
+// Broad translucent-looking flight membranes; flattened ellipsoids with luminous edges and ribbing in shader.
+ell(v(-.78,1.10,.75),v(2.55,.075,.72),[.10,.49,.59],'wing',[norm(v(.83,.55,-.18)),norm(v(-.55,.82,.18)),norm(v(.12,-.05,1))]);
+ell(v(-1.30,.83,-.62),v(2.25,.055,.58),[.08,.37,.51],'wing',[norm(v(-.91,-.23,.18)),norm(v(.22,.97,.10)),norm(v(.20,-.05,1))]);
+// Torso, carapace and sleek neck/head, all continuous sculptural forms.
+ell(v(-.20,.05,0),v(1.58,.57,.93),[.50,.29,.16],'skin');
+ell(v(-.28,.39,0),v(1.50,.48,.99),[.11,.24,.29],'shell');
+ell(v(.93,.36,.02),v(.88,.28,.30),[.20,.39,.43],'skin',[norm(v(.94,.20,0)),norm(v(-.20,.98,0)),v(0,0,1)]);
+ell(v(1.53,.57,.025),v(.58,.39,.36),[.43,.65,.60],'skin',[norm(v(.96,.18,0)),norm(v(-.18,.98,0)),v(0,0,1)]);
+// Four swept-back flippers with tapered silhouettes and subtle golden highlights.
+ell(v(-.85,-.10,1.0),v(1.18,.16,.31),[.47,.29,.15],'skin',[norm(v(-.83,-.20,.52)),norm(v(.30,.95,-.08)),norm(v(-.48,.23,-.84))]);
+ell(v(-.92,-.13,-.91),v(1.15,.14,.28),[.39,.25,.14],'skin',[norm(v(-.85,-.12,-.50)),norm(v(.18,.98,.08)),norm(v(.48,-.18,-.86))]);
+ell(v(-1.12,-.39,.48),v(.80,.13,.25),[.40,.24,.13],'skin',[norm(v(-.86,-.39,.31)),norm(v(.39,.91,0)),norm(v(-.28,.12,-.95))]);
+ell(v(-1.17,-.41,-.45),v(.78,.12,.23),[.40,.24,.13],'skin',[norm(v(-.89,-.34,-.29)),norm(v(.35,.94,0)),norm(v(.28,-.11,-.95))]);
+// Turtle eye and nostril are refined, high-contrast focal accents.
+ell(v(1.77,.72,.332),v(.115,.105,.042),[.025,.038,.054],'skin'); ell(v(1.792,.75,.370),v(.032,.034,.014),[1,.79,.39],'skin',undefined,.18); ell(v(1.803,.759,.382),v(.014,.016,.008),[.012,.022,.035],'skin'); ell(v(2.02,.56,.31),v(.035,.025,.018),[.055,.13,.14],'skin');
+// City towers rise from the shell in a compact, readable skyline.
+const towers:[number,number,number,number][]=[[-.90,.60,.24,.58],[-.61,.64,.27,.92],[-.29,.61,.25,.70],[.02,.64,.29,1.25],[.36,.62,.25,.92],[.66,.57,.23,.68],[.94,.52,.21,.48],[-.02,.66,.19,1.48]];
+for(let i=0;i<towers.length;i++){const [x,z,w,h]=towers[i];box(v(x,.82+h/2,z),v(w/2,h/2,.18),i%3===0?[.12,.22,.28]:[.08,.17,.23],i===7?.42:.08); if(i===1||i===7){ell(v(x,.82+h+.065,z),v(.035,.035,.035),[1,.20,.065],'city',undefined,1.8);}}
+// Lower blocks and a glowing aerial transit loop tie the skyline to the shell.
+for(let i=0;i<11;i++){const x=-1.15+i*.22,z=(i%2?-.40:.38);box(v(x,.79+.17+(i%3)*.045,z),v(.095,.17+(i%3)*.045,.12),[.10,.24,.28],.035);}
+// Distant birds and aircraft, tiny silhouette scale cues.
+function bird(x:number,y:number,z:number,s:number){ell(v(x,y,z),v(s,.018,.012),[.025,.035,.065],'rock');ell(v(x-s*.62,y+s*.10,z),v(s*.65,.012,.012),[.025,.035,.065],'rock',[norm(v(-.8,.45,0)),norm(v(.45,.9,0)),v(0,0,1)]);ell(v(x+s*.62,y+s*.10,z),v(s*.65,.012,.012),[.025,.035,.065],'rock',[norm(v(.8,.45,0)),norm(v(-.45,.9,0)),v(0,0,1)]);}
+bird(-3.4,1.9,-2,.12);bird(3.1,1.35,-2.5,.09);bird(-2.8,-.5,-1.3,.075);
+ell(v(3.7,2.05,-3.2),v(.24,.025,.045),[.035,.055,.08],'rock',[norm(v(1,.05,0)),norm(v(0,1,0)),v(0,0,1)]);
+const cam=v(4.3,3.25,9.6), target=v(0,.12,0), forward=norm(sub(target,cam)), right=norm(v(forward[2],0,-forward[0])), up=norm(v(forward[1]*right[2]-forward[2]*right[1],forward[2]*right[0]-forward[0]*right[2],forward[0]*right[1]-forward[1]*right[0]));
+function intersect(o:Obj,ro:V,rd:V):[number,V,V]|null {let q=sub(ro,o.c), t:number, n:V;
+ if(o.kind==='e'){let p0=dot(q,o.ax[0])/o.r[0],p1=dot(q,o.ax[1])/o.r[1],p2=dot(q,o.ax[2])/o.r[2],d0=dot(rd,o.ax[0])/o.r[0],d1=dot(rd,o.ax[1])/o.r[1],d2=dot(rd,o.ax[2])/o.r[2];const A=d0*d0+d1*d1+d2*d2,B=2*(p0*d0+p1*d1+p2*d2),D=B*B-4*A*(p0*p0+p1*p1+p2*p2-1);if(D<0)return null;const s=Math.sqrt(D);t=(-B-s)/(2*A);if(t<.001)t=(-B+s)/(2*A);if(t<.001)return null;const lx=p0+t*d0,ly=p1+t*d1,lz=p2+t*d2;n=norm(add(add(mul(o.ax[0],lx/o.r[0]),mul(o.ax[1],ly/o.r[1])),mul(o.ax[2],lz/o.r[2])));return [t,add(ro,mul(rd,t)),n];}
+ let lo=-1e9,hi=1e9,axis=0,sgn=1;const qq=[q[0],q[1],q[2]],dd=[rd[0],rd[1],rd[2]],rr=[o.r[0],o.r[1],o.r[2]];for(let i=0;i<3;i++){if(Math.abs(dd[i])<1e-7){if(Math.abs(qq[i])>rr[i])return null;continue;}let a=(-rr[i]-qq[i])/dd[i],b=(rr[i]-qq[i])/dd[i],ss=-1;if(a>b){const z=a;a=b;b=z;ss=1;}if(a>lo){lo=a;axis=i;sgn=ss;}hi=Math.min(hi,b);if(lo>hi)return null;}t=lo>.001?lo:hi;if(t<.001)return null;n=v(0,0,0);if(axis===0)n=v(sgn,0,0);if(axis===1)n=v(0,sgn,0);if(axis===2)n=v(0,0,sgn);return [t,add(ro,mul(rd,t)),n];}
+const sunPos=norm(add(forward,add(mul(up,.34),mul(right,-.30))));
+const sky=(d:V):C=>{const h=clamp(d[1]*.5+.5);const horizon=[.74,.40,.29],zenith=[.035,.052,.17];let c:[number,number,number]=[mix(horizon[0],zenith[0],h),mix(horizon[1],zenith[1],h),mix(horizon[2],zenith[2],h)];const a=Math.acos(clamp(dot(d,sunPos)))*1,disk=Math.exp(-a*a*1800),halo=Math.exp(-a*a*22);return [c[0]+.95*disk+.20*halo,c[1]+.68*disk+.12*halo,c[2]+.32*disk+.05*halo];};
+function trace(ro:V,rd:V):C {let best=1e9,hit:Obj|null=null,p=v(0,0,0),n=v(0,1,0);for(const o of objs){const h=intersect(o,ro,rd);if(h&&h[0]<best){best=h[0];p=h[1];n=h[2];hit=o;}}if(!hit){let c=sky(rd);const haze=Math.exp(-Math.pow((rd[1]+.10)*4,2));c=[mix(c[0],.91,haze*.23),mix(c[1],.61,haze*.20),mix(c[2],.44,haze*.17)];return c;}
+ const o=hit;let base=o.col.slice() as C;let transparency=0;
+ if(o.mat==='shell'){const q=sub(p,o.c),u=Math.atan2(dot(q,o.ax[2])/o.r[2],dot(q,o.ax[0])/o.r[0]),vv=Math.asin(clamp(dot(q,o.ax[1])/o.r[1],-1,1));const fu=Math.abs((u/ (Math.PI/3))-Math.round(u/(Math.PI/3))),fv=Math.abs(vv/(Math.PI/5)-Math.round(vv/(Math.PI/5)));if(fu<.026||fv<.025)base=[.055,.105,.14];else {const plate=.90+.12*Math.sin(u*3+vv*7);base=[base[0]*plate,base[1]*plate,base[2]*plate];}}
+ if(o.mat==='wing'){const q=sub(p,o.c),u=dot(q,o.ax[0])/o.r[0],z=dot(q,o.ax[2])/o.r[2];const edge=clamp((1-Math.max(Math.abs(u),Math.abs(z)))*8);const rib=Math.exp(-Math.pow((z*6-Math.round(z*6))/.09,2));base=[base[0]*(.80+.22*rib)+edge*.12,base[1]*(.83+.20*rib)+edge*.17,base[2]*(.86+.18*rib)+edge*.18];transparency=.20;}
+ if(o.mat==='city'){const q=sub(p,o.c),face=Math.max(Math.abs(n[0]),Math.abs(n[2]));if(face>.8){const wx=Math.floor((q[0]+1)*21),wy=Math.floor((q[1]+1)*20),on=(wx%4===1||wx%4===2)&&(wy%5===1||wy%5===2);if(on){const hue=(wx+wy)%5;base=hue===0?[.95,.52,.18]:[.24,.80,.91];base=[base[0]*.82,base[1]*.82,base[2]*.82];}}}
+ const nd=Math.max(0,dot(n,sunPos)),view=Math.max(0,dot(n,mul(rd,-1))),fres=Math.pow(1-view,3);let shadow=1;const sr=add(p,mul(n,.012));let checks=0;for(const ob of objs){if(ob===o||ob.mat==='cloud'||ob.mat==='wing'&&o.mat==='wing')continue;if(++checks>18)break;const h=intersect(ob,sr,sunPos);if(h&&h[0]<5){shadow=.48;break;}}
+ let diff=.24+nd*.98*shadow, rim=Math.pow(Math.max(0,1-dot(n,mul(rd,-1))),2)*(.13+Math.max(0,dot(n,sunPos))*.28);let shade=[base[0]*(diff+rim),base[1]*(diff+rim),base[2]*(diff+rim)];if(o.mat==='wing'){shade=[mix(shade[0],.58,transparency),mix(shade[1],.72,transparency),mix(shade[2],.77,transparency)];}const spec=Math.pow(Math.max(0,dot(n,norm(sub(sunPos,mul(rd,-1))))),o.mat==='skin'?34:52)*.24;shade=[shade[0]+spec*.95,shade[1]+spec*.68,shade[2]+spec*.38];if(o.mat==='city'){shade=[shade[0]+base[0]*.35,shade[1]+base[1]*.32,shade[2]+base[2]*.25];}
+ const fog=clamp((best-11)/14)*.72;const far=sky(rd);shade=[mix(shade[0],far[0],fog),mix(shade[1],far[1],fog),mix(shade[2],far[2],fog)];if(o.glow)shade=[shade[0]+o.glow*.24,shade[1]+o.glow*.09,shade[2]+o.glow*.035];return shade;}
+const pix=new Float32Array(W*H*3);const aspect=W/H,fov=0.70;
+for(let y=0;y<H;y++)for(let x=0;x<W;x++){let acc=[0,0,0];for(let s=0;s<2;s++){const ox=s===0?.27:.73,oy=s===0?.71:.29,xx=((x+ox)/W*2-1)*aspect*Math.tan(fov), yy=(1-(y+oy)/H*2)*Math.tan(fov);const rd=norm(add(add(forward,mul(right,xx)),mul(up,yy)));const c=trace(cam,rd);acc[0]+=c[0]*.5;acc[1]+=c[1]*.5;acc[2]+=c[2]*.5;}const i=(y*W+x)*3;pix[i]=acc[0];pix[i+1]=acc[1];pix[i+2]=acc[2];}
+// Bloom from a bright pass, using compact separable Gaussian taps.
+const glow=new Float32Array(pix.length);for(let i=0;i<W*H;i++){const k=i*3,l=.2126*pix[k]+.7152*pix[k+1]+.0722*pix[k+2],b=Math.max(0,l-.70)*.75;glow[k]=pix[k]*b;glow[k+1]=pix[k+1]*b;glow[k+2]=pix[k+2]*b;}
+const tmp=new Float32Array(glow.length),weights=[.24,.20,.13,.07,.03];for(let y=0;y<H;y++)for(let x=0;x<W;x++)for(let c=0;c<3;c++){let q=0;for(let d=-4;d<=4;d++){const xx=clamp(x+d,0,W-1),w=weights[Math.abs(d)];q+=glow[(y*W+xx)*3+c]*w;}tmp[(y*W+x)*3+c]=q;}
+const bloom=new Float32Array(glow.length);for(let y=0;y<H;y++)for(let x=0;x<W;x++)for(let c=0;c<3;c++){let q=0;for(let d=-4;d<=4;d++){const yy=clamp(y+d,0,H-1),w=weights[Math.abs(d)];q+=tmp[(yy*W+x)*3+c]*w;}bloom[(y*W+x)*3+c]=q;}
+function srgb(z:number){z=Math.max(0,z);z=z/(1+z*.30);return Math.pow(clamp(z),1/2.2)*255;}
+const small=Buffer.alloc(W*H*4);let total=0,bright=0;for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=(y*W+x)*3,j=(y*W+x)*4;const vig=1-.22*Math.pow(Math.hypot((x-W/2)/(W*.78),(y-H*.48)/(H*.78)),2);for(let c=0;c<3;c++){let z=(pix[i+c]+bloom[i+c]*1.18)*vig;z=(z-.5)*1.035+.5;const val=Math.round(srgb(z));small[j+c]=val;total+=val;if(val>230)bright++;}small[j+3]=255;}
+// Bilinear upscale to the required 1024 square output.
+const rgba=Buffer.alloc(OUT_W*OUT_H*4);for(let y=0;y<OUT_H;y++){const fy=y*(H-1)/(OUT_H-1),y0=Math.floor(fy),y1=Math.min(H-1,y0+1),ty=fy-y0;for(let x=0;x<OUT_W;x++){const fx=x*(W-1)/(OUT_W-1),x0=Math.floor(fx),x1=Math.min(W-1,x0+1),tx=fx-x0,j=(y*OUT_W+x)*4;for(let c=0;c<3;c++){const a=mix(small[(y0*W+x0)*4+c],small[(y0*W+x1)*4+c],tx),b=mix(small[(y1*W+x0)*4+c],small[(y1*W+x1)*4+c],tx);rgba[j+c]=Math.round(mix(a,b,ty));}rgba[j+3]=255;}}
+function crc32(buf:Buffer){let crc=0xffffffff;for(const b of buf){crc^=b;for(let k=0;k<8;k++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}
+function chunk(type:string,data:Buffer){const name=Buffer.from(type),len=Buffer.alloc(4),crc=Buffer.alloc(4);len.writeUInt32BE(data.length);crc.writeUInt32BE(crc32(Buffer.concat([name,data])));return Buffer.concat([len,name,data,crc]);}
+const raw=Buffer.alloc((OUT_W*4+1)*OUT_H);for(let y=0;y<OUT_H;y++){raw[y*(OUT_W*4+1)]=0;rgba.copy(raw,y*(OUT_W*4+1)+1,y*OUT_W*4,(y+1)*OUT_W*4);}const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(OUT_W,0);ihdr.writeUInt32BE(OUT_H,4);ihdr[8]=8;ihdr[9]=6;
+const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',deflateSync(raw,{level:9})),chunk('IEND',Buffer.alloc(0))]);const out=process.env.MAKEFUN_OUTPUT_DIR||'/output';await mkdir(out,{recursive:true});await writeFile(join(out,'entry.png'),png);console.log(`rendered ${OUT_W}x${OUT_H}; internal luminance samples ${total}; bright ${bright}`);
