@@ -1,8 +1,10 @@
-import { copyFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { copyFile, mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const repositoryDirectory = process.cwd();
-const outputDirectory = process.env.MAKEFUN_OUTPUT_DIR || '/output';
-
-await mkdir(outputDirectory, { recursive: true });
-await copyFile(join(repositoryDirectory, 'entry.jpg'), join(outputDirectory, 'entry.png'));
+// The entry image lives beside this program; copy it to the output
+// directory as entry.png (the name stays entry.png for a JPEG too).
+const here = dirname(fileURLToPath(import.meta.url));
+const outDir = process.env.MAKEFUN_OUTPUT_DIR || "/output";
+await mkdir(outDir, { recursive: true });
+await copyFile(join(here, "entry.jpg"), join(outDir, "entry.png"));
