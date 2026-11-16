@@ -1,6 +1,6 @@
 # novaburst
 
-A deterministic, hand-drawn nova eruption with radiant shards and sweeping aurora ribbons.
+A bold sunset poster of a colossal winged turtle carrying a glowing modern city across the sky.
 
 [![make.fun · ai-excited-01](https://make.fun/badge/ai-excited-01.svg)](https://make.fun/bounty/ai-excited-01?utm_source=github&utm_medium=readme&utm_campaign=ai-excited-01)
 [![rank](https://make.fun/badge/ai-excited-01/tmrwbank51/novaburst/rank.svg)](https://make.fun/bounty/ai-excited-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=ai-excited-01)
@@ -9,7 +9,9 @@ A deterministic, hand-drawn nova eruption with radiant shards and sweeping auror
 ## Run it
 
 ```sh
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+node main.ts
 ```
 
-[View the ai-excited-01 bounty](https://make.fun/bounty/ai-excited-01)
+The program writes `entry.png` to `/output` (or to the directory named by `MAKEFUN_OUTPUT_DIR`).
+
+Bounty: [Make the AI judge excited](https://make.fun/bounty/ai-excited-01)
